@@ -9,37 +9,35 @@
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
     #GameDiv { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
     #Cocos3dGameContainer { width: 100%; height: 100%; position: relative; }
-    /* Force the canvas to the front and make it visible */
     canvas { 
       position: absolute; 
       top: 0; left: 0; 
       width: 100% !important; 
       height: 100% !important; 
-      z-index: 999; 
-      image-rendering: pixelated; /* Sharpens UI for Chromebooks */
+      z-index: 1; 
     }
   </style>
 
   <script>
     (function() {
-      // 1. WebGL Compatibility Fix (Addresses the Black Screen)
+      // 1. WebGL & Memory Fix
       const originalGetContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function(type, attributes) {
         if (type === 'webgl' || type === 'webgl2') {
           attributes = Object.assign({}, attributes, {
-            alpha: false, // Set to false to prevent background bleeding
+            alpha: true,
             depth: true,
             stencil: true,
-            antialias: false, // Disabling antialias can fix black screens on low-end GPUs
-            premultipliedAlpha: false,
-            preserveDrawingBuffer: false,
+            antialias: false,
+            premultipliedAlpha: true,
+            preserveDrawingBuffer: true, // Needed for some ChromeOS GPUs to see the UI layer
             powerPreference: "high-performance"
           });
         }
         return originalGetContext.call(this, type, attributes);
       };
 
-      // 2. CORS Fix for assets
+      // 2. Asset loading fix
       const originalImage = window.Image;
       window.Image = function() {
         const img = new originalImage();
@@ -66,41 +64,49 @@
 
   <script>
     (function() {
-      const fixDisplay = () => {
-        const canvas = document.getElementById('GameCanvas');
-        if (canvas) {
-          // Force layout refresh
-          canvas.style.display = 'none';
-          canvas.offsetHeight; 
-          canvas.style.display = 'block';
-          
-          // Manually trigger resize so the engine knows the window is active
-          window.dispatchEvent(new Event('resize'));
+      // 3. UI ENFORCEMENT SCRIPT
+      // This runs every 1 second to find the UI Layer and force it to show up
+      const forceUIUpdate = () => {
+        if (window.cc && cc.director) {
+          const scene = cc.director.getScene();
+          if (scene) {
+            // Find all nodes that might be UI (Canvas, UI_Root, etc.)
+            const children = scene.getComponentsInChildren(cc.Canvas);
+            children.forEach(canvas => {
+              canvas.node.active = true;
+              canvas.node.opacity = 255;
+            });
+          }
         }
       };
 
-      // Force Render Loop Fix
-      const forceTick = setInterval(() => {
-        if (window.cc && cc.director) {
-          if (cc.director.isPaused && cc.director.isPaused()) {
-            cc.director.resume();
-          }
-          // Manually invoke a frame if the screen is black
-          cc.director.mainLoop();
+      // 4. Engine Tick & Resize Fix
+      const fixLayout = () => {
+        window.dispatchEvent(new Event('resize'));
+        const canvas = document.getElementById('GameCanvas');
+        if (canvas) {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
         }
-      }, 1000 / 30); // 30fps force-draw
+      };
+
+      // Run background checks every 1000ms
+      setInterval(() => {
+        forceUIUpdate();
+        if (window.cc && cc.director && cc.director.isPaused()) {
+            cc.director.resume();
+        }
+      }, 1000);
 
       window.addEventListener('load', () => {
         System.import('./index.bed7f.js').then(() => {
-            setTimeout(fixDisplay, 1000);
-        }).catch(err => console.error(err));
+          console.log("Game Loaded - Monitoring UI Layers...");
+          setTimeout(fixLayout, 2000);
+        }).catch(err => console.error("System Import Error:", err));
       });
 
-      // Emergency fix: if still black after 5 seconds, clear the background
-      setTimeout(() => {
-          document.getElementById('GameDiv').style.background = 'transparent';
-          fixDisplay();
-      }, 5000);
+      // ChromeOS Touch/Click Fix: Sometimes UI only appears after first interaction
+      window.addEventListener('mousedown', fixLayout, { once: true });
     })();
   </script>
 </body>
