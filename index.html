@@ -5,53 +5,57 @@
   <base href="https://cdn.jsdelivr.net/gh/bubbls/UGS-Assets@main/gardenless/">
   <title>PvZ2 Gardendless Online | 0.6.0</title>
   
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
+    #GameDiv { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    #Cocos3dGameContainer { width: 100%; height: 100%; position: relative; }
+    /* Force the canvas to the front and make it visible */
+    canvas { 
+      position: absolute; 
+      top: 0; left: 0; 
+      width: 100% !important; 
+      height: 100% !important; 
+      z-index: 999; 
+      image-rendering: pixelated; /* Sharpens UI for Chromebooks */
+    }
+  </style>
+
   <script>
     (function() {
-      // 1. Prevent Canvas Tainting (CORS Fix)
+      // 1. WebGL Compatibility Fix (Addresses the Black Screen)
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+        if (type === 'webgl' || type === 'webgl2') {
+          attributes = Object.assign({}, attributes, {
+            alpha: false, // Set to false to prevent background bleeding
+            depth: true,
+            stencil: true,
+            antialias: false, // Disabling antialias can fix black screens on low-end GPUs
+            premultipliedAlpha: false,
+            preserveDrawingBuffer: false,
+            powerPreference: "high-performance"
+          });
+        }
+        return originalGetContext.call(this, type, attributes);
+      };
+
+      // 2. CORS Fix for assets
       const originalImage = window.Image;
       window.Image = function() {
         const img = new originalImage();
         img.crossOrigin = 'anonymous';
         return img;
       };
-
-      // 2. High-Performance WebGL & Input Lag Fix
-      const originalGetContext = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function(type, attributes) {
-        if (type === 'webgl' || type === 'webgl2') {
-          attributes = Object.assign({}, attributes, {
-            preserveDrawingBuffer: true,
-            alpha: true,
-            failIfMajorPerformanceCaveat: false,
-            powerPreference: "high-performance",
-            desynchronized: true 
-          });
-        }
-        return originalGetContext.call(this, type, attributes);
-      };
     })();
   </script>
 
   <meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="format-detection" content="telephone=no">
-  <meta name="full-screen" content="yes" />
-  <meta name="x5-fullscreen" content="true" />
   <link rel="stylesheet" type="text/css" href="style.f76d1.css" />
-  
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FNC28KV0ZR"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-    gtag('config', 'G-FNC28KV0ZR');
-  </script>
 </head>
 
 <body>
-  <div id="GameDiv" cc_exact_fit_screen="true" style="width: 100vw; height: 100vh; background: #000;">
-    <div id="Cocos3dGameContainer" style="width: 100%; height: 100%;">
+  <div id="GameDiv">
+    <div id="Cocos3dGameContainer">
       <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="99"></canvas>
     </div>
   </div>
@@ -62,49 +66,41 @@
 
   <script>
     (function() {
-      console.log("Applying Enhanced Chromebook Fixes...");
-
-      // GUI Visibility & Dimension Force
       const fixDisplay = () => {
         const canvas = document.getElementById('GameCanvas');
-        const container = document.getElementById('Cocos3dGameContainer');
-        if (canvas && container) {
-          canvas.width = container.clientWidth || window.innerWidth;
-          canvas.height = container.clientHeight || window.innerHeight;
+        if (canvas) {
+          // Force layout refresh
+          canvas.style.display = 'none';
+          canvas.offsetHeight; 
           canvas.style.display = 'block';
-          canvas.style.visibility = 'visible';
-          canvas.style.opacity = '1';
+          
+          // Manually trigger resize so the engine knows the window is active
           window.dispatchEvent(new Event('resize'));
         }
       };
 
-      // Force Engine Tick (Fixes GUI not rendering/freezing)
+      // Force Render Loop Fix
       const forceTick = setInterval(() => {
         if (window.cc && cc.director) {
-          if (!cc.director.isPaused()) {
-            cc.director.mainLoop();
+          if (cc.director.isPaused && cc.director.isPaused()) {
+            cc.director.resume();
           }
+          // Manually invoke a frame if the screen is black
+          cc.director.mainLoop();
         }
-      }, 16);
-
-      // Error Recovery for Module Loading
-      window.addEventListener('error', function(e) {
-        if (e.target.src && (e.target.src.includes('index') || e.target.src.includes('bundle'))) {
-          console.warn("GUI asset load failed. Retrying...");
-          setTimeout(() => {
-            if (typeof System !== 'undefined') System.import('./index.bed7f.js');
-          }, 2000);
-        }
-      }, true);
+      }, 1000 / 30); // 30fps force-draw
 
       window.addEventListener('load', () => {
-        fixDisplay();
-        // Start the game
-        System.import('./index.bed7f.js').catch(err => console.error("Load Error:", err));
+        System.import('./index.bed7f.js').then(() => {
+            setTimeout(fixDisplay, 1000);
+        }).catch(err => console.error(err));
       });
 
-      // Backup delay fix for slow Chromebook processors
-      setTimeout(fixDisplay, 3000);
+      // Emergency fix: if still black after 5 seconds, clear the background
+      setTimeout(() => {
+          document.getElementById('GameDiv').style.background = 'transparent';
+          fixDisplay();
+      }, 5000);
     })();
   </script>
 </body>
