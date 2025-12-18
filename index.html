@@ -20,7 +20,7 @@
 
   <script>
     (function() {
-      // 1. WebGL & Memory Fix
+      // 1. WebGL Layering Fix
       const originalGetContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function(type, attributes) {
         if (type === 'webgl' || type === 'webgl2') {
@@ -30,14 +30,14 @@
             stencil: true,
             antialias: false,
             premultipliedAlpha: true,
-            preserveDrawingBuffer: true, // Needed for some ChromeOS GPUs to see the UI layer
+            preserveDrawingBuffer: true, 
             powerPreference: "high-performance"
           });
         }
         return originalGetContext.call(this, type, attributes);
       };
 
-      // 2. Asset loading fix
+      // 2. Asset Fetching Fix (Fixes invisible icons)
       const originalImage = window.Image;
       window.Image = function() {
         const img = new originalImage();
@@ -64,23 +64,35 @@
 
   <script>
     (function() {
-      // 3. UI ENFORCEMENT SCRIPT
-      // This runs every 1 second to find the UI Layer and force it to show up
-      const forceUIUpdate = () => {
-        if (window.cc && cc.director) {
-          const scene = cc.director.getScene();
-          if (scene) {
-            // Find all nodes that might be UI (Canvas, UI_Root, etc.)
-            const children = scene.getComponentsInChildren(cc.Canvas);
-            children.forEach(canvas => {
-              canvas.node.active = true;
-              canvas.node.opacity = 255;
-            });
+      // 3. NUCLEAR UI FIX
+      const forceUIElements = () => {
+        if (!window.cc || !cc.director) return;
+        
+        const scene = cc.director.getScene();
+        if (!scene) return;
+
+        // Force every single node with 'UI' or 'Canvas' in it to be visible
+        const allNodes = scene.getComponentsInChildren(cc.Component);
+        allNodes.forEach(comp => {
+          if (comp.node) {
+            // Re-enable visibility
+            comp.node.active = true;
+            comp.node.opacity = 255;
+            
+            // Fix Camera Layering (Chromebooks often fail to render Layer 5/UI)
+            if (comp.node.layer !== undefined) {
+                comp.node.layer = 1 << 25; // Force to Global UI layer
+            }
           }
-        }
+        });
+
+        // Force the camera to see the UI
+        const cameras = scene.getComponentsInChildren(cc.Camera);
+        cameras.forEach(cam => {
+            cam.visibility |= (1 << 25); // Add UI layer to camera view
+        });
       };
 
-      // 4. Engine Tick & Resize Fix
       const fixLayout = () => {
         window.dispatchEvent(new Event('resize'));
         const canvas = document.getElementById('GameCanvas');
@@ -90,23 +102,20 @@
         }
       };
 
-      // Run background checks every 1000ms
-      setInterval(() => {
-        forceUIUpdate();
-        if (window.cc && cc.director && cc.director.isPaused()) {
-            cc.director.resume();
-        }
-      }, 1000);
+      // Rapid-fire fix for the first 10 seconds of a level
+      setInterval(forceUIElements, 500);
 
       window.addEventListener('load', () => {
         System.import('./index.bed7f.js').then(() => {
-          console.log("Game Loaded - Monitoring UI Layers...");
+          console.log("System Loaded. Applying Chromebook UI Overrides...");
           setTimeout(fixLayout, 2000);
-        }).catch(err => console.error("System Import Error:", err));
+        }).catch(err => console.error(err));
       });
 
-      // ChromeOS Touch/Click Fix: Sometimes UI only appears after first interaction
-      window.addEventListener('mousedown', fixLayout, { once: true });
+      window.addEventListener('mousedown', () => {
+          fixLayout();
+          forceUIElements();
+      }, { once: false });
     })();
   </script>
 </body>
